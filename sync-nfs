@@ -1,0 +1,96 @@
+#!/bin/bash
+# 
+# Scripted rsync of files from remote NFS to local
+#
+# Define Variables
+readonly job="$(basename "${0}")"
+readonly lockdir="/var/run/${job}"
+readonly pidfile="${lockdir}/${BASHPID}.pid"
+
+
+# Define Functions
+
+# function: Fail info & exit; Exit due to failure, but tell us why we failed
+#  use this function after || to provide failure info for a previous command/func
+fexit() {
+  local error_str=( "$@" )
+  printf "${job} ERR: ${error_str[*]}\n"
+  cleanup 1
+}
+
+# function: Cleanup- remove lockdir, mounts, and files when the script exits
+cleanup() {
+  umount -f "${mntdir}" \
+    || printf "${job} WARNING: Problems encountered unmounting ${mntdir}\n"
+  rm -rf "${mntdir}" \
+    || printf "${job} WARNING: Exiting -> Problems encountered removing ${mntdir}\n"
+  rm -rf "${lockdir}" \
+    || printf "${job} WARNING: Exiting -> Problems encountered removing ${lockdir}\n"
+  exit "$1"
+}
+
+# function: Check for superuser privilege
+#  using 'id' for portability. Use UID as return-status, because 0 == true
+gotroot() {
+  return "$(id -u)"
+}
+
+# function: Lock before run, using mkdir (because I don't like flock)
+runlock() {
+  mkdir "${lockdir}"
+  return "${?}"
+}
+
+
+# main script as function
+
+main() {
+ ## Define local parameters for the main script
+ #
+ #   *** Modify the following lines to suit your needs ***
+  local reposynclog="/var/log/${job}"
+  local nfsshare="nfs-server:/path/to/files"
+  local localrepo="/path/to/target"
+  local mntdir="/mnt/${job}.${BASHPID}"
+
+ ## Check conditions before execution
+    gotroot \
+      || fexit "Exiting - Must run with root permissions"
+
+  if ( runlock "${lockdir}" )
+    then
+       touch "${pidfile}"
+    else
+       fexit "Exiting -> Problem locking ${lockdir} or writing ${pidfile}"
+  fi
+
+  # ToDo -> check local filespace
+ ## Done checking conditions
+
+ ## Execute the main script
+
+  mkdir -p "${mntdir}" \
+      || fexit "Exiting -> Problem creating ${mntdir}.\n"
+
+  mount -t nfs4 -o soft --source "${nfsshare}" --target "${mntdir}" \
+      || fexit "Exiting -> Problem mounting ${nfsshare}.\n"
+
+###  This is our test command. List the nfs-share directory contents into a file under /tmp
+#  ls -al "${mntdir}" >/tmp/listfiles.txt
+
+###  This is our production rsync command
+  if ( rsync -ahrvC --log-file="${reposynclog}" \
+       --exclude "*/lost+found" "${mntdir}/" "${localrepo}" )
+    then
+         printf "${job} INFO: rsync completed.\n" 
+    else
+         fexit "Exiting -> Problems encountered with rsync.\n"
+  fi
+
+ ## run Cleanup after we are done
+ cleanup 0
+
+# End of 'main' script as function
+}
+
+main
