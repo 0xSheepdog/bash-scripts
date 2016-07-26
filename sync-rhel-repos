@@ -1,6 +1,4 @@
 #!/bin/bash
-# v 0.1
-# by Jeff Pettorino
 #
 # Scripted yum (reposync) command to pull all packages from RHSM channels (Internet)
 #
