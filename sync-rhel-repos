@@ -1,0 +1,93 @@
+#!/bin/bash
+# v 0.1
+# by Jeff Pettorino
+#
+# Scripted yum (reposync) command to pull all packages from RHSM channels (Internet)
+#
+# Define Variables
+readonly job=$(basename "${0}")
+readonly lockdir="/var/run/${job}"
+readonly pidfile="${lockdir}/${BASHPID}.pid"
+
+
+# Define Functions
+
+# function: Fail info & exit; Exit due to failure, but tell us why we failed
+#  use this function after || to provide failure info for a previous command/func
+fexit() {
+  local error_str=( "$@" )
+  printf "${job} ERR: ${error_str[*]}\n"
+  cleanup 1
+}
+
+# function: Cleanup- remove lockdir, mounts, and files when the script exits
+cleanup() {
+  rm -rf "${lockdir}" \
+    || printf "${job} WARNING: Exiting-> Problem removing ${lockdir}\n"
+  exit "$1"
+}
+
+# function: Check for superuser privilege
+#  Executing 'id' for portability. Use UID as return-status, because 0 = true
+gotroot() {
+  return "$(id -u)"
+}
+
+# function: Lock before run, which checks validity/creates lockdir
+runlock() {
+  mkdir "${lockdir}"
+  return "${?}"
+}
+
+#
+# Script specific functions
+# function reposync_cmd: Yum util 'reposync' that will pull packages from RHSM
+reposync_cmd() {
+  reposync -l -m -p "${locrepo}" --repoid="${i}" \
+    || printf "${job} WARNING: reposync of ${i} exited with errors.\n"
+}
+
+# End of function definitions
+
+
+
+# main script as function
+
+main() {
+ ## Define local parameters for the main script
+ #
+  local synclog="/var/log/${job}"
+ #   *** Modify the following lines to suit your needs ***
+  local locrepo="/var/www/html/repos"
+  local -a repo=(rhel-7-server-rpms rhel-7-server-optional-rpms rhel-7-server-extras-rpms)
+
+ ## Check conditions before execution
+    gotroot \
+      || fexit "Exiting - Must run with root permissions"
+
+  if ( runlock "${lockdir}" )
+    then
+       /usr/bin/touch "${pidfile}"
+    else
+       fexit "Exiting -> Problem locking ${lockdir} or writing ${pidfile}"
+  fi
+
+  # ToDo -> check local filespace
+ ## Done checking conditions
+
+
+ ## Execute the main script
+
+  for i in "${repo[@]}"
+  do
+    reposync "$i"
+  done
+
+
+ ## run Cleanup after we are done
+ cleanup 0
+
+# End of 'main' script as function
+}
+
+main
