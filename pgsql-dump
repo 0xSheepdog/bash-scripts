@@ -1,0 +1,61 @@
+#!/bin/bash
+# v 1.0
+# by Jeff Pettorino
+# Dump all contents of local PostgreSQL dbms, compress files, and copy to NFS share
+#
+# Define variables
+readonly JOB=`basename ${0}`
+readonly DATE=`date +%Y%m%d`
+readonly CLIENT=`hostname -s`
+readonly LOCKDIR=/var/run/${JOB}
+readonly LOG=/var/log/sync2nas/${DATE}.${JOB}.log
+readonly SRCPATH=/data/db-dump
+readonly DSTPATH=/net/spde-nas1/shares/${CLIENT}
+readonly DUMPFILE=${DATE}.${CLIENT}.${JOB}
+#
+## Condition checks
+printf >&2 "${JOB} INFO: Job started, details at ${LOG}\n"
+# Check for superuser
+if (( $UID != 0 )); then
+  printf "${JOB} ERROR: Must run as root; giving up.\n"
+  exit 1
+fi
+# Check if NFS share is mounted - Don't Exit If True!
+if ! mountpoint -q ${DSTPATH}; then
+  printf "${JOB} WARNING: Potential nfs share issues; please investigate. Continuing.\n"
+#  exit 1
+fi
+# Check for LOCKDIR; is the script already executing?
+if mkdir "${LOCKDIR}"; then
+ # Remove LOCKDIR when the script finishes, or when it receives a signal
+  trap 'rm -rf "${LOCKDIR}"' 0
+  printf "${JOB} INFO: Successfully acquired lock: ${LOCKDIR}\n"
+  printf ${BASHPID} > ${LOCKDIR}/pidfile
+else
+  printf "${JOB} ERROR: Cannot acquire lock on ${LOCKDIR}, giving up.\n"
+  exit 1
+fi
+#
+## Execute!
+# Dump all databases and related data
+if su -c "pg_dumpall -f ${SRCPATH}/${DUMPFILE}" postgres ; then
+    printf "${JOB} INFO: The postgresql DBMS has been backed up.\n"
+else
+    printf "${JOB} ERROR: Backup failed; giving up.\n"
+    exit 1
+fi
+# Compress dumpfile
+if su -c "gzip -f ${SRCPATH}/${DUMPFILE}" postgres ; then
+    printf "${JOB} INFO: The dumpfile has been gzip'd.\n"
+else
+    printf "${JOB} ERROR: GZIP of dumpfile failed; giving up.\n"
+    exit 1
+fi
+# Copy to NFS - Don't "exit 1" If Fail
+if su -c "cp ${SRCPATH}/${DUMPFILE}.gz ${DSTPATH}" postgres ; then
+    printf "${JOB} INFO: The dumpfile GZIP has copied to the NAS.\n"
+else
+    printf "${JOB} WARNING: Copying GZIP to the NAS has failed; please investigate.\n"
+#    exit 1
+fi
+printf "${JOB} INFO: All done!\n"
