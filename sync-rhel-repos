@@ -1,11 +1,15 @@
 #!/bin/bash
 #
+# v 1.0
+# Author: J.Pettorino
+#
 # Scripted yum (reposync) command to pull all packages from RHSM channels (Internet)
 #
 # Define Variables
 readonly job=$(basename "${0}")
 readonly lockdir="/var/run/${job}"
 readonly pidfile="${lockdir}/${BASHPID}.pid"
+readonly today=$(date)
 
 
 # Define Functions
@@ -14,14 +18,14 @@ readonly pidfile="${lockdir}/${BASHPID}.pid"
 #  use this function after || to provide failure info for a previous command/func
 fexit() {
   local error_str=( "$@" )
-  printf "${job} ERR: ${error_str[*]}\n"
+  printf "${today} - ${job} ERR: ${error_str[*]}\n"
   cleanup 1
 }
 
 # function: Cleanup- remove lockdir, mounts, and files when the script exits
 cleanup() {
   rm -rf "${lockdir}" \
-    || printf "${job} WARNING: Exiting-> Problem removing ${lockdir}\n"
+    || printf "${today} - ${job} WARNING: Exiting-> Problem removing ${lockdir}\n"
   exit "$1"
 }
 
@@ -41,8 +45,8 @@ runlock() {
 # Script specific functions
 # function reposync_cmd: Yum util 'reposync' that will pull packages from RHSM
 reposync_cmd() {
-  reposync -l -m -p "${locrepo}" --repoid="${i}" \
-    || printf "${job} WARNING: reposync of ${i} exited with errors.\n"
+  reposync -q -l -m -p "${locrepo}" --repoid="${i}" \
+    || printf " - ${job} WARNING: reposync of ${i} exited with errors.\n"
 }
 
 # End of function definitions
@@ -78,7 +82,9 @@ main() {
 
   for i in "${repo[@]}"
   do
-    reposync "$i"
+    printf "${today} - ${job} INFO: Starting reposync for ${i}\n"
+    reposync_cmd "$i" \
+      && printf "${today} - ${job} INFO: reposync for ${i} finished.\n"
   done
 
 
@@ -89,3 +95,4 @@ main() {
 }
 
 main
+
